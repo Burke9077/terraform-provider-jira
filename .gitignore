@@ -1,5 +1,6 @@
 terraform-provider-jira
 .DS_Store
+.local
 output/
 artifacts/
 .terraform/
