@@ -159,7 +159,7 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
-		i.Fields.Unknowns.Set("customfield_10600", epicLink)
+		i.Fields.Unknowns.Set("customfield_10600", fmt.Sprintf("%v", epicLink))
 	}
 
 	// Epic Name
@@ -167,7 +167,7 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
-		i.Fields.Unknowns.Set("customfield_10601", epicName)
+		i.Fields.Unknowns.Set("customfield_10601", fmt.Sprintf("%v", epicName))
 	}
 
 	// Other custom fields
@@ -400,7 +400,7 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
-		i.Fields.Unknowns.Set("customfield_10600", epicLink)
+		i.Fields.Unknowns.Set("customfield_10600", fmt.Sprintf("%v", epicLink))
 	}
 
 	// Epic Name
@@ -408,7 +408,7 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
-		i.Fields.Unknowns.Set("customfield_10601", epicName)
+		i.Fields.Unknowns.Set("customfield_10601", fmt.Sprintf("%v", epicName))
 	}
 
 	if labels != nil {
