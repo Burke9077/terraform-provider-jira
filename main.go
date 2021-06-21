@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/fourplusone/terraform-provider-jira/jira"
+	"github.com/nyxtend/terraform-provider-jira/jira"
 	"github.com/hashicorp/terraform-plugin-sdk/plugin"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )

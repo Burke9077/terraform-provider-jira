@@ -17,8 +17,8 @@ Terraform 0.13 and later:
 terraform {
   required_providers {
     jira = {
-      source = "fourplusone/jira"
-      version = "0.1.15"
+      source = "nyxtend/jira"
+      version = "0.1.18"
     }
   }
 }
