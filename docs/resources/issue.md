@@ -24,6 +24,7 @@ description: |-
 
 ### Optional
 
+- **acceptance_criteria** (String)
 - **assignee** (String)
 - **delete_transition** (String)
 - **description** (String)

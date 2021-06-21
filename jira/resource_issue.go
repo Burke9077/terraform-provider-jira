@@ -367,6 +367,7 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 	reporter := d.Get("reporter")
 	issueType := d.Get("issue_type").(string)
 	description := d.Get("description").(string)
+	acceptanceCriteria := d.Get("acceptance_criteria").(string)
 	storyPoints := d.Get("story_points").(float64)
 	epicLink := d.Get("epic_link").(string)
 	epicName := d.Get("epic_name").(string)
