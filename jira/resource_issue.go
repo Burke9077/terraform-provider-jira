@@ -66,6 +66,10 @@ func resourceIssue() *schema.Resource {
 				Optional: true,
 				Default:  "",
 			},
+			"acceptance_criteria": &schema.Schema{
+				Type:     schema.TypeString,
+				Optional: true,
+			},
 			"labels": &schema.Schema{
 				Type:     schema.TypeList,
 				Required: true,
@@ -117,6 +121,7 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 	epicName := d.Get("epic_name").(string)
 	issueType := d.Get("issue_type").(string)
 	description := d.Get("description").(string)
+	acceptanceCriteria := d.Get("acceptance_criteria").(string)
 	labels := d.Get("labels")
 	summary := d.Get("summary").(string)
 	projectKey := d.Get("project_key").(string)
@@ -168,6 +173,14 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
 		i.Fields.Unknowns.Set("customfield_10601", fmt.Sprintf("%v", epicName))
+	}
+
+	// Acceptance Criteria
+	if acceptanceCriteria != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_13802", fmt.Sprintf("%v", acceptanceCriteria))
 	}
 
 	// Other custom fields
@@ -300,6 +313,8 @@ func resourceIssueRead(d *schema.ResourceData, m interface{}) error {
 								d.Set("epic_link", value.(string))
 							} else if field == "customfield_10601" {
 								d.Set("epic_name", value.(string))
+							} else if field == "customfield_13802" {
+								d.Set("acceptance_criteria", value.(string))
 							} else {
 								// Only scalar types supported for now
 								switch value.(type) {
@@ -395,7 +410,6 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		i.Fields.Unknowns.Set("customfield_10003", storyPoints)
 	}
 
-	// Epic Link
 	if epicLink != "" {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
@@ -403,12 +417,18 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		i.Fields.Unknowns.Set("customfield_10600", fmt.Sprintf("%v", epicLink))
 	}
 
-	// Epic Name
 	if epicName != "" {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
 		}
 		i.Fields.Unknowns.Set("customfield_10601", fmt.Sprintf("%v", epicName))
+	}
+
+	if acceptanceCriteria != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_13802", fmt.Sprintf("%v", acceptanceCriteria))
 	}
 
 	if labels != nil {
