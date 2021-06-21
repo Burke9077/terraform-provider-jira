@@ -56,11 +56,24 @@ func resourceFieldRead(d *schema.ResourceData, m interface{}) error {
 	name := d.Get("name").(string)
 
 	if fieldsCache == nil || len(fieldsCache) == 0 {
-		fields, _, err := config.jiraClient.Field.GetList()
-		if err != nil {
-			return errors.Wrapf(err, "fetching jira fields failed")
+	  // Add retry logic
+	  httpRetryCount := 10
+		success := false
+	  var lastError error
+	  for (httpRetryCount > 0) {
+	    httpRetryCount -= 1
+	    fields, _, err := config.jiraClient.Field.GetList()
+	    if err == nil {
+	      fieldsCache = fields
+				httpRetryCount = 0
+				success = true
+	    } else {
+	      lastError = err
+	    }
+	  }
+		if (success == false) {
+			return errors.Wrapf(lastError, "fetching jira fields failed")
 		}
-		fieldsCache = fields
 	}
 
 	field := findFieldByName(fieldsCache, name)

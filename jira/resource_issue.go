@@ -45,6 +45,18 @@ func resourceIssue() *schema.Resource {
 					Required: true,
 				},
 			},
+			"story_points": &schema.Schema{
+				Type: schema.TypeFloat,
+				Optional: true,
+			},
+			"epic_link": &schema.Schema{
+				Type: schema.TypeString,
+				Optional: true,
+			},
+			"epic_name": &schema.Schema{
+				Type: schema.TypeString,
+				Optional: true,
+			},
 			"issue_type": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
@@ -56,7 +68,7 @@ func resourceIssue() *schema.Resource {
 			},
 			"labels": &schema.Schema{
 				Type:     schema.TypeList,
-				Optional: true,
+				Required: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
 			"summary": &schema.Schema{
@@ -100,6 +112,9 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 	assignee := d.Get("assignee")
 	reporter := d.Get("reporter")
 	fields := d.Get("fields")
+	storyPoints := d.Get("story_points").(float64)
+	epicLink := d.Get("epic_link").(string)
+	epicName := d.Get("epic_name").(string)
 	issueType := d.Get("issue_type").(string)
 	description := d.Get("description").(string)
 	labels := d.Get("labels")
@@ -131,6 +146,31 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
+	// Story Points
+	if storyPoints != 0.0 {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10003", storyPoints)
+	}
+
+	// Epic Link
+	if epicLink != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10600", epicLink)
+	}
+
+	// Epic Name
+	if epicName != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10601", epicName)
+	}
+
+	// Other custom fields
 	if fields != nil {
 		if i.Fields.Unknowns == nil {
 			i.Fields.Unknowns = tcontainer.NewMarshalMap()
@@ -146,31 +186,72 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
-	issue, res, err := config.jiraClient.Issue.Create(&i)
-	if err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return errors.Wrapf(err, "creating jira issue failed: %s", body)
-	}
-
-	issue, res, err = config.jiraClient.Issue.Get(issue.ID, nil)
-	if err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return errors.Wrapf(err, "getting jira issue failed: %s", body)
-	}
-
-	if state, ok := d.GetOk("state"); ok {
-		if issue.Fields.Status.ID != state.(string) {
-			if transition, ok := d.GetOk("state_transition"); ok {
-				res, err := config.jiraClient.Issue.DoTransition(issue.ID, transition.(string))
+	// Create the issue
+	var lastError error
+	var errorBody []byte
+	httpRetryCount := 20
+	success := false
+	for (httpRetryCount > 0) {
+		httpRetryCount -= 1
+		issue, res, err := config.jiraClient.Issue.Create(&i)
+		if err != nil {
+			body, _ := ioutil.ReadAll(res.Body)
+			lastError = err
+			errorBody = body
+		} else {
+			// Now query the issue we created
+			lastError = nil
+			errorBody = nil
+			httpRetryCount = 20
+			success = false
+			for (httpRetryCount > 0) {
+				httpRetryCount -= 1
+				issue, res, err = config.jiraClient.Issue.Get(issue.ID, nil)
 				if err != nil {
 					body, _ := ioutil.ReadAll(res.Body)
-					return errors.Wrapf(err, "transitioning jira issue failed: %s", body)
+					lastError = err
+					errorBody = body
+				} else {
+					httpRetryCount = 0
+					success = true
+					// Do state transition if one exists
+					if state, ok := d.GetOk("state"); ok {
+						if issue.Fields.Status.ID != state.(string) {
+							if transition, ok := d.GetOk("state_transition"); ok {
+								// Perform the jira transition
+								lastError = nil
+								httpRetryCount = 20
+								success = false
+								for (httpRetryCount > 0) {
+									httpRetryCount -= 1
+									res, err := config.jiraClient.Issue.DoTransition(issue.ID, transition.(string))
+									if err != nil {
+										body, _ := ioutil.ReadAll(res.Body)
+										lastError = err
+										errorBody = body
+									} else {
+										httpRetryCount = 0
+										success = true
+									}
+								}
+								if (success == false) {
+									return errors.Wrapf(lastError, "transitioning jira issue failed: %s", errorBody)
+								}
+							}
+						}
+					}
+					// We are done updating the issue, set it in the state file
+					d.SetId(issue.ID)
 				}
+			}
+			if (success == false) {
+				return errors.Wrapf(lastError, "getting jira issue failed: %s", errorBody)
 			}
 		}
 	}
-
-	d.SetId(issue.ID)
+	if (success == false) {
+		return errors.Wrapf(lastError, "creating jira issue failed: %s", errorBody)
+	}
 
 	return resourceIssueRead(d, m)
 }
@@ -179,62 +260,87 @@ func resourceIssueCreate(d *schema.ResourceData, m interface{}) error {
 func resourceIssueRead(d *schema.ResourceData, m interface{}) error {
 	config := m.(*Config)
 
-	issue, res, err := config.jiraClient.Issue.Get(d.Id(), nil)
-	if err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return errors.Wrapf(err, "getting jira issue failed: %s", body)
-	}
+	var lastError error
+	var errorBody []byte
+	httpRetryCount := 20
+	success := false
+	for (httpRetryCount > 0) {
+		httpRetryCount -= 1
+		issue, res, err := config.jiraClient.Issue.Get(d.Id(), nil)
+		if err != nil {
+			body, _ := ioutil.ReadAll(res.Body)
+			lastError = err
+			errorBody = body
+		} else {
+			httpRetryCount = 0
+			success = true
 
-	if issue.Fields.Assignee != nil {
-		d.Set("assignee", issue.Fields.Assignee.Name)
-	}
+			// We have the issue, read in params
+			if issue.Fields.Assignee != nil {
+				d.Set("assignee", issue.Fields.Assignee.Name)
+			}
 
-	if issue.Fields.Reporter != nil {
-		d.Set("reporter", issue.Fields.Reporter.Name)
-	}
+			if issue.Fields.Reporter != nil {
+				d.Set("reporter", issue.Fields.Reporter.Name)
+			}
 
-	// Custom or non-standard fields
-	var resourceFieldsRaw, resourceHasFields = d.GetOk("fields")
-	if resourceHasFields {
-		incomingFields := make(map[string]string)
-		resourceFields := resourceFieldsRaw.(map[string]interface{})
-		for field := range issue.Fields.Unknowns {
-			if _, existingField := resourceFields[field]; existingField {
-				if value, valueExists := issue.Fields.Unknowns.Value(field); valueExists {
-					// Only scalar types supported for now
-					switch value.(type) {
-					case bool:
-						incomingFields[field] = fmt.Sprintf("%t", value.(bool))
-					case int:
-						incomingFields[field] = fmt.Sprintf("%d", value.(int))
-					case float32:
-						incomingFields[field] = fmt.Sprintf("%f", value.(float32))
-					case float64:
-						incomingFields[field] = fmt.Sprintf("%f", value.(float64))
-					case uint:
-						incomingFields[field] = fmt.Sprintf("%d", value.(uint))
-					case string:
-						incomingFields[field] = fmt.Sprintf("%v", value.(string))
+			// Custom or non-standard fields
+			var resourceFieldsRaw, resourceHasFields = d.GetOk("fields")
+			if resourceHasFields {
+				incomingFields := make(map[string]string)
+				resourceFields := resourceFieldsRaw.(map[string]interface{})
+				for field := range issue.Fields.Unknowns {
+					if _, existingField := resourceFields[field]; existingField {
+						if value, valueExists := issue.Fields.Unknowns.Value(field); valueExists {
+							if field == "customfield_10003" { // Check if this is for story points
+								if value != 0.0 {
+									d.Set("story_points", value.(float64))
+								}
+							} else if field == "customfield_10600" {
+								d.Set("epic_link", value.(string))
+							} else if field == "customfield_10601" {
+								d.Set("epic_name", value.(string))
+							} else {
+								// Only scalar types supported for now
+								switch value.(type) {
+									case bool:
+										incomingFields[field] = fmt.Sprintf("%t", value.(bool))
+									case int:
+										incomingFields[field] = fmt.Sprintf("%d", value.(int))
+									case float32:
+										incomingFields[field] = fmt.Sprintf("%f", value.(float32))
+									case float64:
+										incomingFields[field] = fmt.Sprintf("%f", value.(float64))
+									case uint:
+										incomingFields[field] = fmt.Sprintf("%d", value.(uint))
+									case string:
+										incomingFields[field] = fmt.Sprintf("%v", value.(string))
+								}
+							}
+						}
 					}
 				}
+				d.Set("fields", incomingFields)
 			}
+
+			d.Set("labels", nil)
+			if issue.Fields.Labels != nil && len(issue.Fields.Labels) > 0 {
+				d.Set("labels", issue.Fields.Labels)
+			}
+
+			d.Set("issue_type", issue.Fields.Type.Name)
+			if issue.Fields.Description != "" {
+				d.Set("description", issue.Fields.Description)
+			}
+			d.Set("summary", issue.Fields.Summary)
+			d.Set("project_key", issue.Fields.Project.Key)
+			d.Set("issue_key", issue.Key)
+			d.Set("state", issue.Fields.Status.ID)
 		}
-		d.Set("fields", incomingFields)
 	}
-
-	d.Set("labels", nil)
-	if issue.Fields.Labels != nil && len(issue.Fields.Labels) > 0 {
-		d.Set("labels", issue.Fields.Labels)
+	if (success == false) {
+		return errors.Wrapf(lastError, "getting jira issue failed: %s", errorBody)
 	}
-
-	d.Set("issue_type", issue.Fields.Type.Name)
-	if issue.Fields.Description != "" {
-		d.Set("description", issue.Fields.Description)
-	}
-	d.Set("summary", issue.Fields.Summary)
-	d.Set("project_key", issue.Fields.Project.Key)
-	d.Set("issue_key", issue.Key)
-	d.Set("state", issue.Fields.Status.ID)
 
 	return nil
 }
@@ -246,6 +352,9 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 	reporter := d.Get("reporter")
 	issueType := d.Get("issue_type").(string)
 	description := d.Get("description").(string)
+	storyPoints := d.Get("story_points").(float64)
+	epicLink := d.Get("epic_link").(string)
+	epicName := d.Get("epic_name").(string)
 	fields := d.Get("fields")
 	labels := d.Get("labels")
 	summary := d.Get("summary").(string)
@@ -279,6 +388,29 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
+	if storyPoints != 0.0 {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10003", storyPoints)
+	}
+
+	// Epic Link
+	if epicLink != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10600", epicLink)
+	}
+
+	// Epic Name
+	if epicName != "" {
+		if i.Fields.Unknowns == nil {
+			i.Fields.Unknowns = tcontainer.NewMarshalMap()
+		}
+		i.Fields.Unknowns.Set("customfield_10601", epicName)
+	}
+
 	if labels != nil {
 		for _, label := range labels.([]interface{}) {
 			i.Fields.Labels = append(i.Fields.Labels, fmt.Sprintf("%v", label))
@@ -294,34 +426,78 @@ func resourceIssueUpdate(d *schema.ResourceData, m interface{}) error {
 		}
 	}
 
-	issue, res, err := config.jiraClient.Issue.Update(&i)
-	if err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return errors.Wrapf(err, "updating jira issue failed: %s", body)
-	}
+	// Perform the issue update
+	var lastError error
+	var errorBody []byte
+	httpRetryCount := 20
+	success := false
+	for (httpRetryCount > 0) {
+		httpRetryCount -= 1
+		issue, res, err := config.jiraClient.Issue.Update(&i)
+		if err != nil {
+			body, _ := ioutil.ReadAll(res.Body)
+			lastError = err
+			errorBody = body
+		} else {
+			httpRetryCount = 0
+			success = true
+		}
 
-	issue, res, err = config.jiraClient.Issue.Get(issue.ID, nil)
-	if err != nil {
-		body, _ := ioutil.ReadAll(res.Body)
-		return errors.Wrapf(err, "getting jira issue failed: %s", body)
-	}
+		// We have the issue, now pull back the issue we just updated
+		lastError = nil
+		httpRetryCount = 20
+		success = false
+		for (httpRetryCount > 0) {
+			httpRetryCount -= 1
+			issue, res, err = config.jiraClient.Issue.Get(issue.ID, nil)
+			if err != nil {
+				body, _ := ioutil.ReadAll(res.Body)
+				lastError = err
+				errorBody = body
+			} else {
+				httpRetryCount = 0
+				success = true
+			}
+		}
+		if (success == false) {
+			return errors.Wrapf(lastError, "getting jira issue failed: %s", errorBody)
+		}
 
-	if state, ok := d.GetOk("state"); ok {
-		if issue.Fields.Status.ID != state.(string) {
-			if transition, ok := d.GetOk("state_transition"); ok {
-				res, err := config.jiraClient.Issue.DoTransition(issue.ID, transition.(string))
-				if err != nil {
-					body, _ := ioutil.ReadAll(res.Body)
-					return errors.Wrapf(err, "transitioning jira issue failed: %s", body)
+		if state, ok := d.GetOk("state"); ok {
+			if issue.Fields.Status.ID != state.(string) {
+				if transition, ok := d.GetOk("state_transition"); ok {
+					// Transition the issue
+					lastError = nil
+					httpRetryCount = 20
+					success = false
+					for (httpRetryCount > 0) {
+						httpRetryCount -= 1
+						res, err := config.jiraClient.Issue.DoTransition(issue.ID, transition.(string))
+						if err != nil {
+							body, _ := ioutil.ReadAll(res.Body)
+							lastError = err
+							errorBody = body
+						} else {
+							httpRetryCount = 0
+							success = true
+						}
+					}
+					if (success == false) {
+						return errors.Wrapf(lastError, "transitioning jira issue failed: %s", errorBody)
+					}
 				}
 			}
 		}
-	}
 
-	d.SetId(issue.ID)
+		d.SetId(issue.ID)
+	}
+	if (success == false) {
+		return errors.Wrapf(lastError, "updating jira issue failed: %s", errorBody)
+	}
 
 	return resourceIssueRead(d, m)
 }
+
 
 // resourceIssueDelete deletes jira issue using the jira api
 func resourceIssueDelete(d *schema.ResourceData, m interface{}) error {
@@ -330,18 +506,46 @@ func resourceIssueDelete(d *schema.ResourceData, m interface{}) error {
 	id := d.Id()
 
 	if transition, ok := d.GetOk("delete_transition"); ok {
-		res, err := config.jiraClient.Issue.DoTransition(id, transition.(string))
-		if err != nil {
-			body, _ := ioutil.ReadAll(res.Body)
-			return errors.Wrapf(err, "deleting jira issue failed: %s", body)
+		// Transition the issue
+		var lastError error
+		var errorBody []byte
+		httpRetryCount := 20
+		success := false
+		for (httpRetryCount > 0) {
+			httpRetryCount -= 1
+			res, err := config.jiraClient.Issue.DoTransition(id, transition.(string))
+			if err != nil {
+				body, _ := ioutil.ReadAll(res.Body)
+				lastError = err
+				errorBody = body
+			} else {
+				httpRetryCount = 0
+				success = true
+			}
 		}
-
+		if (success == false) {
+			return errors.Wrapf(lastError, "deleting jira issue failed: %s", errorBody)
+		}
 	} else {
-		res, err := config.jiraClient.Issue.Delete(id)
-
-		if err != nil {
-			body, _ := ioutil.ReadAll(res.Body)
-			return errors.Wrapf(err, "deleting jira issue failed: %s", body)
+		// Transition the issue
+		var lastError error
+		var errorBody []byte
+		httpRetryCount := 20
+		success := false
+		for (httpRetryCount > 0) {
+			httpRetryCount -= 1
+			res, err := config.jiraClient.Issue.Delete(id)
+			if err != nil {
+				body, _ := ioutil.ReadAll(res.Body)
+				lastError = err
+				errorBody = body
+			} else {
+				httpRetryCount = 0
+				success = true
+			}
+		}
+		if (success == false) {
+			return errors.Wrapf(lastError, "deleting jira issue failed: %s", errorBody)
 		}
 	}
 
