@@ -18,7 +18,7 @@ terraform {
   required_providers {
     jira = {
       source = "nyxtend/jira"
-      version = "0.1.18"
+      version = "0.1.19"
     }
   }
 }
