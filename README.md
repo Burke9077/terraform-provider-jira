@@ -1,10 +1,10 @@
 # terraform-provider-jira
 
-Terraform Provider for managing JIRA. (__[View on registry.terraform.io](https://registry.terraform.io/providers/fourplusone/jira/latest)__)
+Forked terraform Provider for managing JIRA. (__[View on registry.terraform.io](https://registry.terraform.io/providers/nyxtend/jira/latest)__)
 
-__[Support this project on Patreon](https://www.patreon.com/fourplusone)__
+__[Support (the project I forked this from) on Patreon](https://www.patreon.com/fourplusone)__
 
-[![CircleCI](https://circleci.com/gh/fourplusone/terraform-provider-jira.svg?style=svg)](https://circleci.com/gh/fourplusone/terraform-provider-jira)
+[![CircleCI](https://circleci.com/gh/nyxtend/terraform-provider-jira.svg?style=svg)](https://circleci.com/gh/nyxtend/terraform-provider-jira)
 
 ## Data Sources
 
@@ -32,7 +32,7 @@ This can be used to interlink infrastructure management with JIRA issues closely
 
 ![terraform-provider-jira demo](./images/terraform-provider-jira.gif)
 
-## Compatibility 
+## Compatibility
 
 
 | Version | Status       |  
@@ -43,36 +43,22 @@ This can be used to interlink infrastructure management with JIRA issues closely
 
 ## Install
 
-## Terraform v0.13
+## Terraform v0.13+
 
-Copy this code into yout terraform configuration file (for example `main.tf`)
+Copy this code into your terraform configuration file (for example `main.tf`)
 
 ```hcl
 terraform {
   required_providers {
     jira = {
-      source = "fourplusone/jira"
-      version = "0.1.14"
+      source = "nyxtend/jira"
+      version = "0.1.18"
     }
   }
 }
 ```
 
 Run `terraform init`
-
-## Terraform v0.12 
-
-* Download `terraform-provider-jira` binary from [Github](https://github.com/fourplusone/terraform-provider-jira/releases)
-* Unzip the zip file
-* Then move `terraform-provider-jira` binary to `$HOME/.terraform.d/plugins` directory
-
-```bash
-mkdir -p $HOME/.terraform.d/plugins
-mv terraform-provider-jira $HOME/.terraform.d/plugins/terraform-provider-jira
-
-```
-
-* Run `terraform init` in your terraform project
 
 ```bash
 terraform init
@@ -90,7 +76,7 @@ export JIRA_USER=username
 export JIRA_PASSWORD=password
 ```
 
-It's also possible to use an API-Token from JIRA cloud. In this case, set 
+It's also possible to use an API-Token from JIRA cloud. In this case, set
 
 ```bash
 export JIRA_URL=https://yourinstance.atlassian.net
@@ -127,15 +113,15 @@ resource "jira_issue" "example" {
   summary     = "Created using Terraform"
 
   // description is optional  
-  description = "This is a test issue" 
+  description = "This is a test issue"
 
-  // (optional) Instead of deleting the issue, perform this transition 
+  // (optional) Instead of deleting the issue, perform this transition
   delete_transition = 21
 
   // (optional) Make sure, the issue is in the desired state
   // using state_transition
   state = 10000
-  state_transition = 31 
+  state_transition = 31
 }
 
 resource "jira_comment" "example_comment" {
@@ -239,14 +225,14 @@ resource "jira_role" "role" {
   description = "The Project Managers"
 }
 
-// Grant Project Access to user "bot" 
+// Grant Project Access to user "bot"
 resource "jira_project_membership" "member" {
   project_key = "${jira_project.project_a.key}"
   role_id = "${jira_role.role.id}"
   username = "bot"
 }
 
-// Grant Project Access to group "bot" 
+// Grant Project Access to group "bot"
 resource "jira_project_membership" "group_member" {
   project_key = "${jira_project.project_a.key}"
   role_id = "${jira_role.role.id}"
@@ -263,7 +249,7 @@ resource "jira_webhook" "demo_hook" {
   name = "Terraform Hook"
   url = "https://demohook"
   jql = "project = PROJ"
-  
+
   // See https://developer.atlassian.com/server/jira/platform/webhooks/ for supported events
   events = ["jira:issue_created"]
 }
@@ -310,7 +296,7 @@ Run `terraform apply`
 terraform apply
 ```
 
-## Building 
+## Building
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine.
 
@@ -320,7 +306,7 @@ Clone repository to: `$HOME/development/terraform-providers/`
 
 ```sh
 $ mkdir -p $HOME/development/terraform-providers/; cd $HOME/development/terraform-providers/
-$ git clone git@github.com:fourplusone/terraform-provider-jira
+$ git clone git@github.com:nyxtend/terraform-provider-jira
 ...
 ```
 
